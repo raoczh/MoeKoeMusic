@@ -59,6 +59,9 @@ export default function useAudioEnhancer(audio) {
         return enhancementProfiles[profiles[enhancementLevel.value - 1]];
     });
     
+    // 添加一个标志来跟踪是否已经初始化过
+    let isInitialized = false;
+    
     // 初始化Web Audio API
     const initAudioContext = () => {
         try {
@@ -67,13 +70,8 @@ export default function useAudioEnhancer(audio) {
                 console.log('[AudioEnhancer] Web Audio API初始化成功');
             }
             
-            // 尝试恢复音频上下文
             if (audioContext.state === 'suspended') {
-                audioContext.resume().then(() => {
-                    console.log('[AudioEnhancer] 音频上下文已恢复');
-                }).catch(error => {
-                    console.error('[AudioEnhancer] 恢复音频上下文失败:', error);
-                });
+                audioContext.resume();
             }
             return true;
         } catch (error) {
@@ -82,81 +80,25 @@ export default function useAudioEnhancer(audio) {
         }
     };
     
-    // 创建音频处理节点
-    const createAudioNodes = () => {
+    // 创建基本的音频处理节点
+    const createBasicNodes = () => {
         if (!audioContext) return false;
         
         try {
-            // 清理之前的节点连接
-            if (sourceNode) {
-                try {
-                    sourceNode.disconnect();
-                    console.log('[AudioEnhancer] 已断开现有音频连接');
-                } catch (e) {
-                    console.warn('[AudioEnhancer] 断开现有连接时出现警告:', e);
-                }
-            }
-            
-            // 创建或重用源节点
+            // 只在第一次初始化时创建源节点
             if (!sourceNode) {
-                try {
-                    // 创建源节点并立即连接到输出，确保音频不会中断
-                    if (!audio.captureStream && !audio.mozCaptureStream) {
-                        audio.crossOrigin = 'anonymous';
-                        sourceNode = audioContext.createMediaElementSource(audio);
-                        sourceNode.connect(audioContext.destination);
-                        audioContext.resume();
-                        console.log('[AudioEnhancer] MediaElementSource创建并连接到输出');
-                    } else {
-                        console.error('[AudioEnhancer] 音频元素已被其他AudioContext使用');
-                        if (audioContext) {
-                            try {
-                                audioContext.close();
-                            } catch (e) {}
-                        }
-                        
-                        // 创建新的AudioContext
-                        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                        try {
-                            audio.crossOrigin = 'anonymous';
-                            sourceNode = audioContext.createMediaElementSource(audio);
-                            sourceNode.connect(audioContext.destination);
-                            audioContext.resume();
-                            console.log('[AudioEnhancer] MediaElementSource重新创建成功');
-                        } catch (retryError) {
-                            console.error('[AudioEnhancer] MediaElementSource重试创建失败:', retryError);
-                            return false;
-                        }
-                    }
-                } catch (error) {
-                    console.warn('[AudioEnhancer] MediaElementSource创建失败，尝试重新初始化:', error);
-                    
-                    // 关闭现有的AudioContext（如果存在）
-                    if (audioContext) {
-                        try {
-                            audioContext.close();
-                        } catch (e) {}
-                    }
-                    
-                    // 创建新的AudioContext并重试
-                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    try {
-                        audio.crossOrigin = 'anonymous';
-                        sourceNode = audioContext.createMediaElementSource(audio);
-                        sourceNode.connect(audioContext.destination);
-                        audioContext.resume();
-                        console.log('[AudioEnhancer] MediaElementSource重新创建成功');
-                    } catch (retryError) {
-                        console.error('[AudioEnhancer] MediaElementSource重试创建失败:', retryError);
-                        return false;
-                    }
-                }
+                audio.crossOrigin = 'anonymous';
+                sourceNode = audioContext.createMediaElementSource(audio);
+                // 始终保持与destination的连接
+                sourceNode.connect(audioContext.destination);
+                console.log('[AudioEnhancer] 创建基本音频连接');
             }
             
-            // 创建基本节点
+            // 创建增益节点
             gainNode = audioContext.createGain();
             gainNode.gain.value = 1.0;
             
+            // 创建压缩器
             compressorNode = audioContext.createDynamicsCompressor();
             compressorNode.threshold.setValueAtTime(-24, audioContext.currentTime);
             compressorNode.knee.setValueAtTime(30, audioContext.currentTime);
@@ -164,7 +106,7 @@ export default function useAudioEnhancer(audio) {
             compressorNode.attack.setValueAtTime(0.003, audioContext.currentTime);
             compressorNode.release.setValueAtTime(0.25, audioContext.currentTime);
             
-            // 创建均衡器节点组
+            // 创建均衡器节点
             equalizerNodes = [];
             const frequencies = [60, 170, 350, 1000, 3500, 5000, 10000, 12000, 14000, 16000];
             frequencies.forEach((freq, index) => {
@@ -181,14 +123,13 @@ export default function useAudioEnhancer(audio) {
             reverbNode = audioContext.createConvolver();
             createReverbImpulse();
             
-            // 创建分析节点
+            // 创建分析器节点
             analyserNode = audioContext.createAnalyser();
             analyserNode.fftSize = 2048;
             
-            console.log('[AudioEnhancer] 音频处理节点创建成功');
             return true;
         } catch (error) {
-            console.error('[AudioEnhancer] 音频处理节点创建失败:', error);
+            console.error('[AudioEnhancer] 创建音频节点失败:', error);
             return false;
         }
     };
@@ -212,37 +153,22 @@ export default function useAudioEnhancer(audio) {
         reverbNode.buffer = impulse;
     };
     
-    // 连接音频处理链
-    const connectAudioChain = () => {
-        if (!sourceNode) return;
+    // 连接增强器节点链
+    const connectEnhancerChain = () => {
+        if (!sourceNode || !gainNode) return false;
         
         try {
-            // 先断开源节点的所有连接
-            sourceNode.disconnect();
+            // 先断开源节点的额外连接（保持与destination的连接）
+            try {
+                const connections = sourceNode.numberOfOutputs;
+                if (connections > 1) {
+                    sourceNode.disconnect(compressorNode);
+                }
+            } catch (e) {}
             
-            if (!isEnhancerEnabled.value) {
-                // 如果增强器被禁用，直接连接到输出
-                sourceNode.connect(audioContext.destination);
-                enhancerConnected = false;
-                console.log('[AudioEnhancer] 增强器已禁用，使用直通模式');
-                return;
-            }
-            
-            // 断开其他节点的连接
-            if (compressorNode) compressorNode.disconnect();
-            if (gainNode) gainNode.disconnect();
-            if (reverbNode) reverbNode.disconnect();
-            if (analyserNode) analyserNode.disconnect();
-            equalizerNodes.forEach(node => {
-                try { node.disconnect(); } catch (e) {}
-            });
-            
-            // 建立处理链
-            let currentNode = sourceNode;
-            
-            // 连接压缩器
-            currentNode.connect(compressorNode);
-            currentNode = compressorNode;
+            // 建立增强器处理链
+            sourceNode.connect(compressorNode);
+            let currentNode = compressorNode;
             
             // 连接均衡器链
             equalizerNodes.forEach(eqNode => {
@@ -253,7 +179,6 @@ export default function useAudioEnhancer(audio) {
             // 连接增益和混响
             currentNode.connect(gainNode);
             
-            // 添加混响效果（并行）
             if (reverbNode) {
                 const reverbGain = audioContext.createGain();
                 currentNode.connect(reverbNode);
@@ -264,24 +189,14 @@ export default function useAudioEnhancer(audio) {
             
             // 连接分析器
             gainNode.connect(analyserNode);
-            
-            // 连接到输出
             gainNode.connect(audioContext.destination);
             
             enhancerConnected = true;
-            console.log('[AudioEnhancer] 音频处理链连接成功');
-            
-            // 应用增强设置
-            applyEnhancement();
+            console.log('[AudioEnhancer] 增强器处理链连接成功');
+            return true;
         } catch (error) {
-            console.error('[AudioEnhancer] 音频处理链连接失败:', error);
-            // 确保音频可以播放
-            try {
-                sourceNode.disconnect();
-                sourceNode.connect(audioContext.destination);
-            } catch (e) {
-                console.error('[AudioEnhancer] 恢复直接音频输出失败:', e);
-            }
+            console.error('[AudioEnhancer] 连接增强器处理链失败:', error);
+            return false;
         }
     };
     
@@ -376,40 +291,134 @@ export default function useAudioEnhancer(audio) {
         analyze();
     };
     
-    // 启用/禁用增强器
-    const toggleEnhancer = () => {
-        console.log('[AudioEnhancer] 切换增强器状态，当前状态:', isEnhancerEnabled.value);
-        isEnhancerEnabled.value = !isEnhancerEnabled.value;
+    // 从设置中恢复配置
+    const loadSettings = () => {
+        const settings = JSON.parse(localStorage.getItem('settings') || '{}');
+        isEnhancerEnabled.value = settings.audioEnhancer !== undefined ? settings.audioEnhancer : false; // 默认关闭
+        enhancementLevel.value = settings.enhancementLevel || 2;
+        console.log('[AudioEnhancer] 设置已加载:', { enabled: isEnhancerEnabled.value, level: enhancementLevel.value });
+    };
+    
+    // 修改初始化增强器函数
+    const initializeEnhancer = () => {
+        console.log('[AudioEnhancer] 开始初始化增强器');
         
+        if (!initAudioContext()) return false;
+
+        // 如果是第一次初始化
+        if (!isInitialized) {
+            if (!createBasicNodes()) return false;
+            isInitialized = true;
+
+            // 根据设置决定是否启用增强器
+            if (!isEnhancerEnabled.value) {
+                console.log('[AudioEnhancer] 根据设置保持增强器关闭状态');
+                return true;
+            }
+        }
+
         if (isEnhancerEnabled.value) {
-            if (!audioContext || audioContext.state === 'closed') {
-                if (!initAudioContext()) {
-                    console.error('[AudioEnhancer] 无法初始化音频上下文');
-                    isEnhancerEnabled.value = false;
-                    return;
+            connectEnhancerChain();
+            applyEnhancement();
+            
+            // 延迟启动分析
+            setTimeout(() => {
+                if (isEnhancerEnabled.value) {
+                    analyzeAudioQuality();
+                }
+            }, 500);
+        }
+
+        return true;
+    };
+
+    // 添加音频事件监听
+    const setupAudioListeners = () => {
+        // 监听音频源变化
+        audio.addEventListener('loadedmetadata', () => {
+            console.log('[AudioEnhancer] 检测到新的音频源');
+            if (!isInitialized) {
+                initializeEnhancer();
+            } else if (isEnhancerEnabled.value) {
+                // 重新连接增强器链
+                connectEnhancerChain();
+                applyEnhancement();
+            }
+        });
+
+        // 监听播放错误
+        audio.addEventListener('error', (e) => {
+            console.error('[AudioEnhancer] 音频播放错误:', e);
+            if (sourceNode) {
+                try {
+                    // 确保基本连接存在
+                    sourceNode.disconnect();
+                    sourceNode.connect(audioContext.destination);
+                } catch (err) {
+                    console.error('[AudioEnhancer] 恢复基本连接失败:', err);
                 }
             }
-            
-            // 确保音频上下文是激活的
-            if (audioContext.state === 'suspended') {
-                audioContext.resume().catch(error => {
-                    console.error('[AudioEnhancer] 恢复音频上下文失败:', error);
-                    isEnhancerEnabled.value = false;
-                    return;
+        });
+    };
+
+    // 修改禁用增强器函数
+    const disableEnhancer = () => {
+        console.log('[AudioEnhancer] 开始禁用增强器');
+        isAnalyzing.value = false;
+        
+        if (sourceNode) {
+            try {
+                // 断开除了destination之外的所有连接
+                const connections = sourceNode.numberOfOutputs;
+                if (connections > 1) {
+                    sourceNode.disconnect(compressorNode);
+                }
+                
+                // 断开其他节点
+                if (compressorNode) compressorNode.disconnect();
+                if (gainNode) gainNode.disconnect();
+                if (reverbNode) reverbNode.disconnect();
+                if (analyserNode) analyserNode.disconnect();
+                equalizerNodes.forEach(node => {
+                    try { node.disconnect(); } catch (e) {}
                 });
+                
+                enhancerConnected = false;
+                console.log('[AudioEnhancer] 增强器已禁用，保持基本音频输出');
+            } catch (error) {
+                console.error('[AudioEnhancer] 禁用增强器时出错:', error);
             }
-            
+        }
+    };
+    
+    // 修改 toggleEnhancer 函数
+    const toggleEnhancer = () => {
+        console.log('[AudioEnhancer] 切换增强器状态，当前状态:', isEnhancerEnabled.value);
+        
+        // 保存当前播放状态
+        const wasPlaying = !audio.paused;
+        const currentTime = audio.currentTime;
+        
+        isEnhancerEnabled.value = !isEnhancerEnabled.value;
+
+        if (isEnhancerEnabled.value) {
             initializeEnhancer();
         } else {
             disableEnhancer();
         }
-        
+
         // 保存设置
         const settings = JSON.parse(localStorage.getItem('settings') || '{}');
         settings.audioEnhancer = isEnhancerEnabled.value;
         settings.enhancementLevel = enhancementLevel.value;
         localStorage.setItem('settings', JSON.stringify(settings));
-        
+
+        // 如果之前在播放，确保继续播放
+        if (wasPlaying) {
+            audio.currentTime = currentTime;
+            audio.play().catch(e => console.error('[AudioEnhancer] 恢复播放失败:', e));
+        }
+
         console.log('[AudioEnhancer] 增强器状态已更新:', isEnhancerEnabled.value ? '启用' : '禁用');
     };
     
@@ -431,84 +440,6 @@ export default function useAudioEnhancer(audio) {
         console.log('[AudioEnhancer] 增强级别已更新为:', enhancementLevel.value);
     };
     
-    // 初始化增强器
-    const initializeEnhancer = () => {
-        console.log('[AudioEnhancer] 开始初始化增强器');
-        if (!initAudioContext()) return false;
-        
-        // 如果已经连接，先断开
-        if (enhancerConnected) {
-            console.log('[AudioEnhancer] 检测到已有连接，先断开重新初始化');
-            try {
-                if (sourceNode) sourceNode.disconnect();
-                enhancerConnected = false;
-            } catch (e) {
-                console.warn('[AudioEnhancer] 断开旧连接时出错:', e);
-            }
-        }
-        
-        // 等待音频元素准备就绪
-        const initWhenReady = () => {
-            if (audio.readyState >= 1 && audio.src) { // HAVE_METADATA 且有音频源
-                if (createAudioNodes()) {
-                    connectAudioChain();
-                    if (isEnhancerEnabled.value) {
-                        applyEnhancement();
-                        // 延迟启动分析，确保音频开始播放
-                        setTimeout(() => {
-                            if (isEnhancerEnabled.value) {
-                                analyzeAudioQuality();
-                            }
-                        }, 500);
-                    }
-                    console.log('[AudioEnhancer] 增强器初始化完成');
-                }
-            } else {
-                setTimeout(initWhenReady, 100);
-            }
-        };
-        
-        initWhenReady();
-        return true;
-    };
-    
-    // 禁用增强器
-    const disableEnhancer = () => {
-        console.log('[AudioEnhancer] 开始禁用增强器');
-        isAnalyzing.value = false;
-        
-        if (sourceNode) {
-            try {
-                // 断开所有节点的连接
-                sourceNode.disconnect();
-                if (compressorNode) compressorNode.disconnect();
-                if (gainNode) gainNode.disconnect();
-                if (reverbNode) reverbNode.disconnect();
-                if (analyserNode) analyserNode.disconnect();
-                equalizerNodes.forEach(node => {
-                    try { node.disconnect(); } catch (e) {}
-                });
-                
-                // 直接连接到输出，保持音频播放
-                sourceNode.connect(audioContext.destination);
-                
-                enhancerConnected = false;
-                console.log('[AudioEnhancer] 增强器已禁用，音频输出已恢复');
-            } catch (error) {
-                console.error('[AudioEnhancer] 禁用增强器时出错:', error);
-                // 确保音频能够播放
-                try {
-                    if (sourceNode) {
-                        sourceNode.disconnect();
-                        sourceNode.connect(audioContext.destination);
-                    }
-                } catch (e) {
-                    console.error('[AudioEnhancer] 恢复直接音频输出失败:', e);
-                }
-            }
-        }
-    };
-    
     // 获取增强器状态信息
     const getEnhancerStatus = () => {
         return {
@@ -519,17 +450,6 @@ export default function useAudioEnhancer(audio) {
             analysis: audioAnalysis.value,
             profile: currentProfile.value
         };
-    };
-    
-    // 从设置中恢复配置
-    const loadSettings = () => {
-        const settings = JSON.parse(localStorage.getItem('settings') || '{}');
-        isEnhancerEnabled.value = settings.audioEnhancer !== false; // 默认启用
-        enhancementLevel.value = settings.enhancementLevel || 2;
-        console.log('[AudioEnhancer] 设置已加载:', { enabled: isEnhancerEnabled.value, level: enhancementLevel.value });
-        
-        // 不在这里自动初始化，而是等待音频播放时再初始化
-        // 避免过早创建MediaElementSource导致音频无法播放
     };
     
     // 监听设置变更事件
@@ -550,6 +470,7 @@ export default function useAudioEnhancer(audio) {
     
     // 初始化
     loadSettings();
+    setupAudioListeners();
     
     return {
         // 状态
