@@ -1,4 +1,5 @@
 import { ref } from 'vue';
+import useAudioEnhancer from './AudioEnhancer';
 
 export default function useAudioController({ onSongEnd, updateCurrentTime }) {
     const audio = new Audio();
@@ -6,6 +7,18 @@ export default function useAudioController({ onSongEnd, updateCurrentTime }) {
     const isMuted = ref(false);
     const volume = ref(66);
     const playbackRate = ref(1.0);
+    
+    // 初始化AI音质增强器
+    const audioEnhancer = useAudioEnhancer(audio);
+    const { 
+        isEnhancerEnabled, 
+        enhancementLevel, 
+        currentQuality, 
+        audioAnalysis,
+        toggleEnhancer, 
+        setEnhancementLevel, 
+        getEnhancerStatus 
+    } = audioEnhancer;
 
     // 初始化音频设置
     const initAudio = () => {
@@ -26,8 +39,33 @@ export default function useAudioController({ onSongEnd, updateCurrentTime }) {
         audio.addEventListener('pause', handleAudioEvent);
         audio.addEventListener('play', handleAudioEvent);
         audio.addEventListener('timeupdate', updateCurrentTime);
+        
+        // 音频加载完成后初始化增强器
+        audio.addEventListener('loadeddata', () => {
+            if (isEnhancerEnabled.value) {
+                audioEnhancer.initializeEnhancer();
+                console.log('[AudioController] AI音质增强器已启动');
+            }
+        });
+        
+        // 监听设置变更事件
+        if (typeof window !== 'undefined') {
+            window.addEventListener('audio-enhancer-setting-changed', (event) => {
+                const { enabled } = event.detail;
+                if (enabled !== isEnhancerEnabled.value) {
+                    if (enabled) {
+                        toggleEnhancer();
+                    } else {
+                        if (isEnhancerEnabled.value) {
+                            toggleEnhancer();
+                        }
+                    }
+                    console.log('[AudioController] 响应设置变更，增强器状态:', enabled ? '启用' : '禁用');
+                }
+            });
+        }
 
-        console.log('[AudioController] 初始化完成，音量设置为:', audio.volume, 'volume值:', volume.value, '播放速度:', audio.playbackRate);
+        console.log('[AudioController] 初始化完成，音量设置为:', audio.volume, 'volume值:', volume.value, '播放速度:', audio.playbackRate, 'AI增强:', isEnhancerEnabled.value);
     };
 
     // 处理播放/暂停事件
@@ -114,6 +152,14 @@ export default function useAudioController({ onSongEnd, updateCurrentTime }) {
         changeVolume,
         setCurrentTime,
         setPlaybackRate,
-        destroy
+        destroy,
+        // AI音质增强相关
+        isEnhancerEnabled,
+        enhancementLevel,
+        currentQuality,
+        audioAnalysis,
+        toggleEnhancer,
+        setEnhancementLevel,
+        getEnhancerStatus
     };
-} 
+}

@@ -1,0 +1,311 @@
+/* AI音质增强器样式 */
+.audio-enhancer-control {
+    position: relative;
+    display: inline-block;
+}
+
+.enhancer-active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    color: white !important;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.enhancer-indicator {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: #ff6b6b;
+    color: white;
+    border-radius: 50%;
+    width: 14px;
+    height: 14px;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.enhancer-menu {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    padding: 12px;
+    min-width: 220px;
+    z-index: 1000;
+    margin-bottom: 5px;
+    animation: enhancerMenuSlide 0.2s ease-out;
+}
+
+@keyframes enhancerMenuSlide {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.enhancer-status {
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.quality-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.quality-label {
+    font-size: 12px;
+    color: #666;
+    font-weight: 500;
+}
+
+.quality-low {
+    color: #ff6b6b;
+    font-weight: bold;
+    font-size: 12px;
+}
+
+.quality-medium {
+    color: #ffa726;
+    font-weight: bold;
+    font-size: 12px;
+}
+
+.quality-high {
+    color: #66bb6a;
+    font-weight: bold;
+    font-size: 12px;
+}
+
+.quality-unknown {
+    color: #999;
+    font-size: 12px;
+}
+
+.analysis-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.analysis-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #777;
+}
+
+.enhancement-levels {
+    margin-top: 8px;
+}
+
+.level-label {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.level-options {
+    display: flex;
+    gap: 6px;
+}
+
+.level-option {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    background: white;
+    color: #666;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+}
+
+.level-option:hover {
+    border-color: #667eea;
+    color: #667eea;
+    background: #f8f9ff;
+}
+
+.level-option.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-color: #667eea;
+    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+}
+
+/* 深色主题适配 */
+[data-theme="dark"] .enhancer-menu {
+    background: #2a2a2a;
+    border-color: #404040;
+    color: #e0e0e0;
+}
+
+[data-theme="dark"] .enhancer-status {
+    border-bottom-color: #404040;
+}
+
+[data-theme="dark"] .quality-label,
+[data-theme="dark"] .level-label {
+    color: #b0b0b0;
+}
+
+[data-theme="dark"] .analysis-item {
+    color: #999;
+}
+
+[data-theme="dark"] .level-option {
+    background: #3a3a3a;
+    border-color: #505050;
+    color: #b0b0b0;
+}
+
+[data-theme="dark"] .level-option:hover {
+    background: #404040;
+    border-color: #667eea;
+    color: #667eea;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .enhancer-menu {
+        min-width: 180px;
+        padding: 10px;
+    }
+    
+    .level-options {
+        gap: 4px;
+    }
+    
+    .level-option {
+        padding: 5px 6px;
+        font-size: 10px;
+    }
+}
+
+/* 音质增强器状态指示器动画 */
+.enhancer-active .fa-magic {
+    animation: enhancerPulse 2s infinite;
+}
+
+@keyframes enhancerPulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.1);
+    }
+}
+
+/* 音质分析可视化 */
+.quality-spectrum {
+    display: flex;
+    align-items: end;
+    height: 20px;
+    gap: 1px;
+    margin-top: 8px;
+    padding: 2px;
+    background: #f5f5f5;
+    border-radius: 3px;
+}
+
+.spectrum-bar {
+    flex: 1;
+    background: linear-gradient(to top, #667eea, #764ba2);
+    border-radius: 1px;
+    min-height: 2px;
+    transition: height 0.1s ease;
+}
+
+[data-theme="dark"] .quality-spectrum {
+    background: #404040;
+}
+
+/* 增强器操作按钮 */
+.enhancer-actions {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+}
+
+.enhancer-toggle-btn {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: white;
+    color: #666;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.enhancer-toggle-btn:hover {
+    border-color: #667eea;
+    color: #667eea;
+    background: #f8f9ff;
+}
+
+.enhancer-toggle-btn.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-color: #667eea;
+    box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+}
+
+/* 深色主题适配 - 增强器操作按钮 */
+[data-theme="dark"] .enhancer-actions {
+    border-top-color: #404040;
+}
+
+[data-theme="dark"] .enhancer-toggle-btn {
+    background: #3a3a3a;
+    border-color: #505050;
+    color: #b0b0b0;
+}
+
+[data-theme="dark"] .enhancer-toggle-btn:hover {
+    background: #404040;
+    border-color: #667eea;
+    color: #667eea;
+}
+
+/* 增强器工具提示 */
+.enhancer-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    margin-bottom: 5px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.audio-enhancer-control:hover .enhancer-tooltip {
+    opacity: 1;
+}

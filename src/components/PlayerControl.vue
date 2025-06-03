@@ -51,6 +51,54 @@
                         class="fas fa-heart"></i></button>
                 <button class="extra-btn" title="收藏至" @click="playlistSelect.fetchPlaylists()"><i
                         class="fas fa-add"></i></button>
+                <!-- AI音质增强控制 -->
+                <div class="audio-enhancer-control">
+                    <button class="extra-btn" 
+                            :class="{ 'enhancer-active': isEnhancerEnabled }" 
+                            @click="toggleEnhancerMenu" 
+                            :title="`AI音质增强: ${isEnhancerEnabled ? '开启' : '关闭'} (${currentQuality})`">
+                        <i class="fas fa-magic"></i>
+                        <span class="enhancer-indicator" v-if="isEnhancerEnabled">{{ enhancementLevel }}</span>
+                    </button>
+                    <div v-if="showEnhancerMenu" class="enhancer-menu">
+                        <div class="enhancer-status">
+                            <div class="quality-indicator">
+                                <span class="quality-label">音质:</span>
+                                <span :class="`quality-${currentQuality}`">{{ getQualityText(currentQuality) }}</span>
+                            </div>
+                            <div class="analysis-info" v-if="audioAnalysis.dynamicRange">
+                                <div class="analysis-item">
+                                    <span>动态范围: {{ audioAnalysis.dynamicRange }}%</span>
+                                </div>
+                                <div class="analysis-item">
+                                    <span>噪声水平: {{ audioAnalysis.noiseLevel }}%</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="enhancement-levels">
+                             <div class="level-label">增强级别:</div>
+                             <div class="level-options">
+                                 <button v-for="level in [1, 2, 3]" 
+                                         :key="level"
+                                         class="level-option" 
+                                         :class="{ active: enhancementLevel === level }"
+                                         @click="() => {
+                                             setEnhancementLevel(level);
+                                             showEnhancerMenu = false;
+                                         }">
+                                     {{ ['轻度', '中度', '重度'][level - 1] }}
+                                 </button>
+                             </div>
+                         </div>
+                         <div class="enhancer-actions">
+                             <button class="enhancer-toggle-btn" 
+                                     :class="{ active: isEnhancerEnabled }"
+                                     @click="toggleEnhancer">
+                                 {{ isEnhancerEnabled ? '关闭增强' : '开启增强' }}
+                             </button>
+                         </div>
+                    </div>
+                </div>
                 <button class="extra-btn" @click="togglePlaybackMode">
                     <i v-if="currentPlaybackModeIndex != '2'" :class="currentPlaybackMode.icon"
                         :title="currentPlaybackMode.title"></i>
@@ -257,7 +305,23 @@ const updateCurrentTime = throttle(() => {
 
 // 初始化各个模块
 const audioController = useAudioController({ onSongEnd, updateCurrentTime });
-const { playing, isMuted, volume, changeVolume, audio, playbackRate, setPlaybackRate } = audioController;
+const { 
+    playing, 
+    isMuted, 
+    volume, 
+    changeVolume, 
+    audio, 
+    playbackRate, 
+    setPlaybackRate,
+    // AI音质增强相关
+    isEnhancerEnabled,
+    enhancementLevel,
+    currentQuality,
+    audioAnalysis,
+    toggleEnhancer,
+    setEnhancementLevel,
+    getEnhancerStatus
+} = audioController;
 
 const lyricsHandler = useLyricsHandler(t);
 const { lyricsData, originalLyrics, showLyrics, scrollAmount, SongTips, toggleLyrics, getLyrics, highlightCurrentChar, resetLyricsHighlight, getCurrentLineText, } = lyricsHandler;
@@ -727,6 +791,7 @@ const endLyricsDrag = () => {
 };
 
 const showSpeedMenu = ref(false);
+const showEnhancerMenu = ref(false);
 const currentSpeed = ref(1.0);
 const playbackSpeeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
@@ -735,11 +800,37 @@ const toggleSpeedMenu = () => {
     showSpeedMenu.value = !showSpeedMenu.value;
 };
 
+// 切换增强器菜单
+const toggleEnhancerMenu = () => {
+    showEnhancerMenu.value = !showEnhancerMenu.value;
+};
+
+// 获取音质文本
+const getQualityText = (quality) => {
+    const qualityMap = {
+        'low': '低品质',
+        'medium': '中品质', 
+        'high': '高品质',
+        'unknown': '分析中'
+    };
+    return qualityMap[quality] || '未知';
+};
+
 // 改变播放速度
 const changePlaybackSpeed = (speed) => {
     currentSpeed.value = speed;
     setPlaybackRate(speed);
     showSpeedMenu.value = false;
+};
+
+// 点击外部关闭菜单
+const handleClickOutside = (event) => {
+    if (!event.target.closest('.playback-speed')) {
+        showSpeedMenu.value = false;
+    }
+    if (!event.target.closest('.audio-enhancer-control')) {
+        showEnhancerMenu.value = false;
+    }
 };
 
 // 组件挂载
@@ -811,6 +902,7 @@ onMounted(() => {
 
     // 添加事件监听
     document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('click', handleClickOutside);
 
     // 设置特定于PlayerControl的监听器
     audio.addEventListener('pause', () => {
@@ -864,6 +956,7 @@ onUnmounted(() => {
 
     // 清理键盘事件
     document.removeEventListener('keydown', handleKeyDown);
+    document.removeEventListener('click', handleClickOutside);
 });
 
 // 对外暴露接口
@@ -999,5 +1092,6 @@ const onQueueCloudSongAdd = async (hash, name, author, timeLength) => {
 </script>
 
 <style scoped>
-@import '@/assets/style/PlayerControl.css';
+@import '../assets/style/PlayerControl.css';
+@import '../assets/style/AudioEnhancer.css';
 </style>

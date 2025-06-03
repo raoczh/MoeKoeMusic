@@ -1,5 +1,6 @@
 // 导出所有组件模块
 import useAudioController from './AudioController';
+import useAudioEnhancer from './AudioEnhancer';
 import useLyricsHandler from './LyricsHandler';
 import useProgressBar from './ProgressBar';
 import usePlaybackMode from './PlaybackMode';
@@ -9,10 +10,11 @@ import { useHelpers } from './Helpers';
 
 export {
   useAudioController,
+  useAudioEnhancer,
   useLyricsHandler,
   useProgressBar,
   usePlaybackMode,
   useMediaSession,
   useSongQueue,
   useHelpers
-}; 
+};

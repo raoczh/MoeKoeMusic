@@ -136,6 +136,7 @@ const selectedSettings = ref({
     minimizeToTray: { displayText: t('da-kai'), value: 'on' },
     highDpi: { displayText: t('guan-bi'), value: 'off' },
     qualityCompatibility: { displayText: t('guan-bi'), value: 'off' },
+    audioEnhancer: { displayText: t('kai-qi'), value: 'on' },
     dpiScale: { displayText: '1.0', value: '1.0' },
     apiMode: { displayText: t('guan-bi'), value: 'off' },
     touchBar: { displayText: t('guan-bi'), value: 'off' }
@@ -181,6 +182,11 @@ const settingSections = computed(() => [
                 key: 'quality',
                 label: t('yin-zhi-xuan-ze'),
                 icon: '🎧 '
+            },
+            {
+                key: 'audioEnhancer',
+                label: 'AI音质增强',
+                icon: '✨ '
             },
             {
                 key: 'greetings',
@@ -303,6 +309,13 @@ const selectionTypeMap = {
             { displayText: t('gao-yin-zhi-320kbps'), value: 'high' },
             { displayText: t('wu-sun-yin-zhi-1104kbps'), value: 'lossless' },
             { displayText: t('hires-yin-zhi'), value: 'hires' }
+        ],
+    },
+    audioEnhancer: {
+        title: 'AI音质增强',
+        options: [
+            { displayText: t('kai-qi'), value: 'on' },
+            { displayText: t('guan-bi'), value: 'off' }
         ]
     },
     lyricsBackground: {
@@ -459,6 +472,16 @@ const selectOption = (option) => {
         'desktopLyrics': () => {
             const action = option.value === 'on' ? 'display-lyrics' : 'close-lyrics';
             window.electron.ipcRenderer.send('desktop-lyrics-action', action);
+        },
+        'audioEnhancer': () => {
+            // 通知音频控制器更新增强器状态
+            if (typeof window !== 'undefined') {
+                const event = new CustomEvent('audio-enhancer-setting-changed', {
+                    detail: { enabled: option.value === 'on' }
+                });
+                window.dispatchEvent(event);
+                console.log('[Settings] AI音质增强设置已更新:', option.value === 'on' ? '开启' : '关闭');
+            }
         },
     };
     actions[selectionType.value]?.();
