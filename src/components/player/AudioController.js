@@ -40,32 +40,76 @@ export default function useAudioController({ onSongEnd, updateCurrentTime }) {
         audio.addEventListener('play', handleAudioEvent);
         audio.addEventListener('timeupdate', updateCurrentTime);
         
-        // 音频加载完成后初始化增强器
-        audio.addEventListener('loadeddata', () => {
+        // 音频开始播放时初始化增强器
+        audio.addEventListener('play', () => {
             if (isEnhancerEnabled.value) {
-                audioEnhancer.initializeEnhancer();
-                console.log('[AudioController] AI音质增强器已启动');
+                try {
+                    // 确保在播放开始时重新初始化增强器
+                    if (!audioEnhancer.enhancerConnected) {
+                        console.log('[AudioController] 播放开始，初始化AI音质增强器');
+                        audioEnhancer.initializeEnhancer();
+                    }
+                } catch (error) {
+                    console.error('[AudioController] 增强器初始化失败:', error);
+                    // 如果初始化失败，禁用增强器
+                    isEnhancerEnabled.value = false;
+                }
             }
         });
+        
+        // 监听音频源变化
+        let lastSrc = '';
+        const checkSrcChange = () => {
+            if (audio.src !== lastSrc) {
+                console.log('[AudioController] 检测到音频源变化:', audio.src);
+                lastSrc = audio.src;
+                if (audio.src && isEnhancerEnabled.value) {
+                    // 新音频源，需要重新初始化增强器
+                    console.log('[AudioController] 音频源变化，重新初始化增强器');
+                    setTimeout(() => {
+                        if (audio.readyState >= 1) { // HAVE_METADATA
+                            audioEnhancer.initializeEnhancer();
+                        }
+                    }, 100); // 给予一些时间让音频元数据加载
+                }
+            }
+        };
+        
+        // 监听音频错误
+        audio.addEventListener('error', (error) => {
+            console.error('[AudioController] 音频错误:', error);
+            // 出现错误时尝试恢复音频播放
+            if (isEnhancerEnabled.value) {
+                audioEnhancer.disableEnhancer();
+                setTimeout(() => {
+                    if (isEnhancerEnabled.value) {
+                        audioEnhancer.initializeEnhancer();
+                    }
+                }, 1000);
+            }
+        });
+        
+        // 定期检查音频源变化
+        setInterval(checkSrcChange, 1000);
         
         // 监听设置变更事件
         if (typeof window !== 'undefined') {
             window.addEventListener('audio-enhancer-setting-changed', (event) => {
                 const { enabled } = event.detail;
                 if (enabled !== isEnhancerEnabled.value) {
+                    console.log('[AudioController] 响应增强器设置变更:', enabled ? '启用' : '禁用');
                     if (enabled) {
-                        toggleEnhancer();
+                        audioEnhancer.toggleEnhancer();
                     } else {
                         if (isEnhancerEnabled.value) {
-                            toggleEnhancer();
+                            audioEnhancer.toggleEnhancer();
                         }
                     }
-                    console.log('[AudioController] 响应设置变更，增强器状态:', enabled ? '启用' : '禁用');
                 }
             });
         }
 
-        console.log('[AudioController] 初始化完成，音量设置为:', audio.volume, 'volume值:', volume.value, '播放速度:', audio.playbackRate, 'AI增强:', isEnhancerEnabled.value);
+        console.log('[AudioController] 初始化完成，音量:', audio.volume, 'volume值:', volume.value, '播放速度:', audio.playbackRate, 'AI增强:', isEnhancerEnabled.value);
     };
 
     // 处理播放/暂停事件
