@@ -35,20 +35,20 @@ export default function useAudioEnhancer(audio) {
     const enhancementProfiles = {
         light: {
             compression: { threshold: -24, ratio: 2, attack: 0.003, release: 0.1 },
-            eq: [0, 1, 2, 1, 0, -1, 0, 1, 2, 1], // 10频段EQ增益(dB)
+            eq: [1, 0.5, 0, 0.5, 1, 1.5, 1, 0.5, 0, 0],
             reverb: { roomSize: 0.1, damping: 0.8, wetGain: 0.05 },
             gain: 1.1
         },
         medium: {
             compression: { threshold: -20, ratio: 3, attack: 0.003, release: 0.1 },
-            eq: [1, 2, 3, 2, 1, -1, 1, 2, 3, 2],
-            reverb: { roomSize: 0.2, damping: 0.7, wetGain: 0.1 },
+            eq: [2, 1, 0, 1, 2, 2.5, 2, 1, 0.5, 0],
+            reverb: { roomSize: 0.15, damping: 0.7, wetGain: 0.1 },
             gain: 1.2
         },
         heavy: {
             compression: { threshold: -18, ratio: 4, attack: 0.002, release: 0.08 },
-            eq: [2, 3, 4, 3, 2, -2, 2, 3, 4, 3],
-            reverb: { roomSize: 0.3, damping: 0.6, wetGain: 0.15 },
+            eq: [3, 2, 1, 1.5, 2.5, 3, 2.5, 2, 1, 0.5],
+            reverb: { roomSize: 0.2, damping: 0.6, wetGain: 0.15 },
             gain: 1.3
         }
     };
@@ -62,15 +62,18 @@ export default function useAudioEnhancer(audio) {
     // 初始化Web Audio API
     const initAudioContext = () => {
         try {
-            if (!audioContext) {
+            if (!audioContext || audioContext.state === 'closed') {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                audioContext.resume(); // 确保音频上下文是激活状态
                 console.log('[AudioEnhancer] Web Audio API初始化成功');
-            } else {
-                // 如果上下文已存在但处于暂停状态，尝试恢复
-                if (audioContext.state === 'suspended') {
-                    audioContext.resume();
-                }
+            }
+            
+            // 尝试恢复音频上下文
+            if (audioContext.state === 'suspended') {
+                audioContext.resume().then(() => {
+                    console.log('[AudioEnhancer] 音频上下文已恢复');
+                }).catch(error => {
+                    console.error('[AudioEnhancer] 恢复音频上下文失败:', error);
+                });
             }
             return true;
         } catch (error) {
@@ -94,28 +97,66 @@ export default function useAudioEnhancer(audio) {
                 }
             }
             
-            // 只在sourceNode不存在时创建新的源节点
+            // 创建或重用源节点
             if (!sourceNode) {
                 try {
-                    // 检查audio元素是否已经被连接到其他AudioContext
+                    // 创建源节点并立即连接到输出，确保音频不会中断
                     if (!audio.captureStream && !audio.mozCaptureStream) {
+                        audio.crossOrigin = 'anonymous';
                         sourceNode = audioContext.createMediaElementSource(audio);
-                        console.log('[AudioEnhancer] MediaElementSource创建成功');
+                        sourceNode.connect(audioContext.destination);
+                        audioContext.resume();
+                        console.log('[AudioEnhancer] MediaElementSource创建并连接到输出');
                     } else {
                         console.error('[AudioEnhancer] 音频元素已被其他AudioContext使用');
-                        return false;
+                        if (audioContext) {
+                            try {
+                                audioContext.close();
+                            } catch (e) {}
+                        }
+                        
+                        // 创建新的AudioContext
+                        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        try {
+                            audio.crossOrigin = 'anonymous';
+                            sourceNode = audioContext.createMediaElementSource(audio);
+                            sourceNode.connect(audioContext.destination);
+                            audioContext.resume();
+                            console.log('[AudioEnhancer] MediaElementSource重新创建成功');
+                        } catch (retryError) {
+                            console.error('[AudioEnhancer] MediaElementSource重试创建失败:', retryError);
+                            return false;
+                        }
                     }
                 } catch (error) {
-                    console.error('[AudioEnhancer] MediaElementSource创建失败:', error);
-                    return false;
+                    console.warn('[AudioEnhancer] MediaElementSource创建失败，尝试重新初始化:', error);
+                    
+                    // 关闭现有的AudioContext（如果存在）
+                    if (audioContext) {
+                        try {
+                            audioContext.close();
+                        } catch (e) {}
+                    }
+                    
+                    // 创建新的AudioContext并重试
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    try {
+                        audio.crossOrigin = 'anonymous';
+                        sourceNode = audioContext.createMediaElementSource(audio);
+                        sourceNode.connect(audioContext.destination);
+                        audioContext.resume();
+                        console.log('[AudioEnhancer] MediaElementSource重新创建成功');
+                    } catch (retryError) {
+                        console.error('[AudioEnhancer] MediaElementSource重试创建失败:', retryError);
+                        return false;
+                    }
                 }
             }
             
-            // 创建增益节点
+            // 创建基本节点
             gainNode = audioContext.createGain();
             gainNode.gain.value = 1.0;
             
-            // 创建压缩器节点
             compressorNode = audioContext.createDynamicsCompressor();
             compressorNode.threshold.setValueAtTime(-24, audioContext.currentTime);
             compressorNode.knee.setValueAtTime(30, audioContext.currentTime);
@@ -175,39 +216,28 @@ export default function useAudioEnhancer(audio) {
     const connectAudioChain = () => {
         if (!sourceNode) return;
         
-        // 确保音频上下文处于运行状态
-        if (audioContext.state === 'suspended') {
-            audioContext.resume().then(() => {
-                console.log('[AudioEnhancer] 音频上下文已恢复');
-            }).catch(error => {
-                console.error('[AudioEnhancer] 恢复音频上下文失败:', error);
-            });
-        }
-        
         try {
-            // 断开所有现有连接
-            try {
-                sourceNode.disconnect();
-                if (compressorNode) compressorNode.disconnect();
-                if (gainNode) gainNode.disconnect();
-                if (reverbNode) reverbNode.disconnect();
-                if (analyserNode) analyserNode.disconnect();
-                equalizerNodes.forEach(node => {
-                    try { node.disconnect(); } catch (e) {}
-                });
-            } catch (e) {
-                console.warn('[AudioEnhancer] 断开连接时出现警告:', e);
-            }
+            // 先断开源节点的所有连接
+            sourceNode.disconnect();
             
             if (!isEnhancerEnabled.value) {
-                // 禁用增强器时，直接连接到输出
+                // 如果增强器被禁用，直接连接到输出
                 sourceNode.connect(audioContext.destination);
                 enhancerConnected = false;
                 console.log('[AudioEnhancer] 增强器已禁用，使用直通模式');
                 return;
             }
             
-            // 创建主音频处理链
+            // 断开其他节点的连接
+            if (compressorNode) compressorNode.disconnect();
+            if (gainNode) gainNode.disconnect();
+            if (reverbNode) reverbNode.disconnect();
+            if (analyserNode) analyserNode.disconnect();
+            equalizerNodes.forEach(node => {
+                try { node.disconnect(); } catch (e) {}
+            });
+            
+            // 建立处理链
             let currentNode = sourceNode;
             
             // 连接压缩器
@@ -220,44 +250,32 @@ export default function useAudioEnhancer(audio) {
                 currentNode = eqNode;
             });
             
-            // 连接增益节点
+            // 连接增益和混响
             currentNode.connect(gainNode);
             
-            // 创建干湿混合
-            const dryGain = audioContext.createGain();
-            const wetGain = audioContext.createGain();
-            
-            // 设置干湿比例
-            const wetLevel = Math.min(currentProfile.value.reverb.wetGain, 0.3);
-            wetGain.gain.setValueAtTime(wetLevel, audioContext.currentTime);
-            dryGain.gain.setValueAtTime(1 - wetLevel, audioContext.currentTime);
-            
-            // 干声路径
-            gainNode.connect(dryGain);
-            
-            // 湿声路径（混响）
-            gainNode.connect(reverbNode);
-            reverbNode.connect(wetGain);
-            
-            // 混合干湿声
-            const mixNode = audioContext.createGain();
-            dryGain.connect(mixNode);
-            wetGain.connect(mixNode);
+            // 添加混响效果（并行）
+            if (reverbNode) {
+                const reverbGain = audioContext.createGain();
+                currentNode.connect(reverbNode);
+                reverbNode.connect(reverbGain);
+                reverbGain.gain.setValueAtTime(currentProfile.value.reverb.wetGain, audioContext.currentTime);
+                reverbGain.connect(gainNode);
+            }
             
             // 连接分析器
-            mixNode.connect(analyserNode);
+            gainNode.connect(analyserNode);
             
-            // 最后连接到输出
-            analyserNode.connect(audioContext.destination);
+            // 连接到输出
+            gainNode.connect(audioContext.destination);
             
             enhancerConnected = true;
             console.log('[AudioEnhancer] 音频处理链连接成功');
             
-            // 立即应用增强设置
+            // 应用增强设置
             applyEnhancement();
         } catch (error) {
             console.error('[AudioEnhancer] 音频处理链连接失败:', error);
-            // 发生错误时，确保音频可以正常播放
+            // 确保音频可以播放
             try {
                 sourceNode.disconnect();
                 sourceNode.connect(audioContext.destination);
@@ -347,31 +365,15 @@ export default function useAudioEnhancer(audio) {
             
             currentQuality.value = quality;
             
-            // 根据分析结果自动调整增强级别
-            autoAdjustEnhancement(quality, dynamicRange, noiseLevel);
-            
             // 使用较低的更新频率进行分析
             setTimeout(() => {
                 if (isAnalyzing.value) {
                     requestAnimationFrame(analyze);
                 }
-            }, 500); // 每500ms更新一次
+            }, 500);
         };
         
         analyze();
-    };
-    
-    // 自动调整增强级别
-    const autoAdjustEnhancement = (quality, dynamicRange, noiseLevel) => {
-        if (quality === 'low' && dynamicRange < 0.3) {
-            enhancementLevel.value = 3; // 重度增强
-        } else if (quality === 'medium' && dynamicRange < 0.5) {
-            enhancementLevel.value = 2; // 中度增强
-        } else if (quality === 'high') {
-            enhancementLevel.value = 1; // 轻度增强
-        }
-        
-        applyEnhancement();
     };
     
     // 启用/禁用增强器
