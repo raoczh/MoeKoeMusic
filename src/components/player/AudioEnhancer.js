@@ -10,6 +10,8 @@ export default function useAudioEnhancer(audio) {
     const enhancementLevel = ref(2); // 1-轻度, 2-中度, 3-重度
     const isAnalyzing = ref(false);
     const currentQuality = ref('unknown');
+    // 添加用户交互激活标志
+    const requiresUserActivation = ref(true);
     
     // Web Audio API 上下文
     let audioContext = null;
@@ -20,6 +22,7 @@ export default function useAudioEnhancer(audio) {
     let reverbNode = null;
     let analyserNode = null;
     let enhancerConnected = false;
+    let baselineConnected = false; // 添加基础连接状态标志
     
     // 音频分析数据
     const audioAnalysis = ref({
@@ -69,10 +72,13 @@ export default function useAudioEnhancer(audio) {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 console.log('[AudioEnhancer] Web Audio API初始化成功');
             }
-            
-            if (audioContext.state === 'suspended') {
-                audioContext.resume();
+
+            // 如果需要用户激活且上下文被挂起，返回false
+            if (audioContext.state === 'suspended' && requiresUserActivation.value) {
+                console.log('[AudioEnhancer] 等待用户交互以激活AudioContext');
+                return false;
             }
+
             return true;
         } catch (error) {
             console.error('[AudioEnhancer] Web Audio API初始化失败:', error);
@@ -83,50 +89,57 @@ export default function useAudioEnhancer(audio) {
     // 创建基本的音频处理节点
     const createBasicNodes = () => {
         if (!audioContext) return false;
-        
+
         try {
-            // 只在第一次初始化时创建源节点
+            // 创建源节点（如果还没有创建）
             if (!sourceNode) {
+                console.log('[AudioEnhancer] 创建音频源节点');
                 audio.crossOrigin = 'anonymous';
                 sourceNode = audioContext.createMediaElementSource(audio);
-                // 始终保持与destination的连接
+                // 立即建立基础连接
                 sourceNode.connect(audioContext.destination);
-                console.log('[AudioEnhancer] 创建基本音频连接');
+                baselineConnected = true;
+                console.log('[AudioEnhancer] 建立基础音频连接');
             }
-            
-            // 创建增益节点
-            gainNode = audioContext.createGain();
-            gainNode.gain.value = 1.0;
-            
-            // 创建压缩器
-            compressorNode = audioContext.createDynamicsCompressor();
-            compressorNode.threshold.setValueAtTime(-24, audioContext.currentTime);
-            compressorNode.knee.setValueAtTime(30, audioContext.currentTime);
-            compressorNode.ratio.setValueAtTime(12, audioContext.currentTime);
-            compressorNode.attack.setValueAtTime(0.003, audioContext.currentTime);
-            compressorNode.release.setValueAtTime(0.25, audioContext.currentTime);
-            
-            // 创建均衡器节点
-            equalizerNodes = [];
-            const frequencies = [60, 170, 350, 1000, 3500, 5000, 10000, 12000, 14000, 16000];
-            frequencies.forEach((freq, index) => {
-                const filter = audioContext.createBiquadFilter();
-                filter.type = index === 0 ? 'lowshelf' : 
-                             index === frequencies.length - 1 ? 'highshelf' : 'peaking';
-                filter.frequency.setValueAtTime(freq, audioContext.currentTime);
-                filter.Q.setValueAtTime(1, audioContext.currentTime);
-                filter.gain.setValueAtTime(0, audioContext.currentTime);
-                equalizerNodes.push(filter);
-            });
-            
-            // 创建混响节点
-            reverbNode = audioContext.createConvolver();
-            createReverbImpulse();
-            
-            // 创建分析器节点
-            analyserNode = audioContext.createAnalyser();
-            analyserNode.fftSize = 2048;
-            
+
+            // 创建其他节点（如果需要）
+            if (!gainNode) {
+                gainNode = audioContext.createGain();
+                gainNode.gain.value = 1.0;
+            }
+
+            if (!compressorNode) {
+                compressorNode = audioContext.createDynamicsCompressor();
+                compressorNode.threshold.setValueAtTime(-24, audioContext.currentTime);
+                compressorNode.knee.setValueAtTime(30, audioContext.currentTime);
+                compressorNode.ratio.setValueAtTime(12, audioContext.currentTime);
+                compressorNode.attack.setValueAtTime(0.003, audioContext.currentTime);
+                compressorNode.release.setValueAtTime(0.25, audioContext.currentTime);
+            }
+
+            if (equalizerNodes.length === 0) {
+                const frequencies = [60, 170, 350, 1000, 3500, 5000, 10000, 12000, 14000, 16000];
+                frequencies.forEach((freq, index) => {
+                    const filter = audioContext.createBiquadFilter();
+                    filter.type = index === 0 ? 'lowshelf' : 
+                                 index === frequencies.length - 1 ? 'highshelf' : 'peaking';
+                    filter.frequency.setValueAtTime(freq, audioContext.currentTime);
+                    filter.Q.setValueAtTime(1, audioContext.currentTime);
+                    filter.gain.setValueAtTime(0, audioContext.currentTime);
+                    equalizerNodes.push(filter);
+                });
+            }
+
+            if (!reverbNode) {
+                reverbNode = audioContext.createConvolver();
+                createReverbImpulse();
+            }
+
+            if (!analyserNode) {
+                analyserNode = audioContext.createAnalyser();
+                analyserNode.fftSize = 2048;
+            }
+
             return true;
         } catch (error) {
             console.error('[AudioEnhancer] 创建音频节点失败:', error);
@@ -153,49 +166,62 @@ export default function useAudioEnhancer(audio) {
         reverbNode.buffer = impulse;
     };
     
+    // 建立基础音频连接
+    const setupBaselineConnection = () => {
+        if (!sourceNode || baselineConnected) return;
+        
+        try {
+            sourceNode.disconnect();
+            sourceNode.connect(audioContext.destination);
+            baselineConnected = true;
+            console.log('[AudioEnhancer] 建立基础音频连接');
+        } catch (error) {
+            console.error('[AudioEnhancer] 建立基础连接失败:', error);
+        }
+    };
+    
     // 连接增强器节点链
     const connectEnhancerChain = () => {
         if (!sourceNode || !gainNode) return false;
-        
+
         try {
-            // 先断开源节点的额外连接（保持与destination的连接）
-            try {
-                const connections = sourceNode.numberOfOutputs;
-                if (connections > 1) {
-                    sourceNode.disconnect(compressorNode);
-                }
-            } catch (e) {}
+            console.log('[AudioEnhancer] 开始连接增强器链');
             
+            // 断开所有现有连接
+            sourceNode.disconnect();
+            baselineConnected = false;
+
             // 建立增强器处理链
             sourceNode.connect(compressorNode);
-            let currentNode = compressorNode;
             
-            // 连接均衡器链
+            let currentNode = compressorNode;
             equalizerNodes.forEach(eqNode => {
                 currentNode.connect(eqNode);
                 currentNode = eqNode;
             });
-            
+
             // 连接增益和混响
             currentNode.connect(gainNode);
             
+            // 添加混响（并行处理）
             if (reverbNode) {
                 const reverbGain = audioContext.createGain();
-                currentNode.connect(reverbNode);
+                gainNode.connect(reverbNode);
                 reverbNode.connect(reverbGain);
                 reverbGain.gain.setValueAtTime(currentProfile.value.reverb.wetGain, audioContext.currentTime);
-                reverbGain.connect(gainNode);
+                reverbGain.connect(audioContext.destination);
             }
-            
-            // 连接分析器
+
+            // 连接分析器和主输出
             gainNode.connect(analyserNode);
             gainNode.connect(audioContext.destination);
-            
+
             enhancerConnected = true;
             console.log('[AudioEnhancer] 增强器处理链连接成功');
             return true;
         } catch (error) {
             console.error('[AudioEnhancer] 连接增强器处理链失败:', error);
+            setupBaselineConnection(); // 恢复基础连接
             return false;
         }
     };
@@ -298,111 +324,99 @@ export default function useAudioEnhancer(audio) {
         enhancementLevel.value = settings.enhancementLevel || 2;
         console.log('[AudioEnhancer] 设置已加载:', { enabled: isEnhancerEnabled.value, level: enhancementLevel.value });
     };
-    
-    // 修改初始化增强器函数
-    const initializeEnhancer = () => {
-        console.log('[AudioEnhancer] 开始初始化增强器');
-        
-        if (!initAudioContext()) return false;
 
-        // 如果是第一次初始化
-        if (!isInitialized) {
-            if (!createBasicNodes()) return false;
-            isInitialized = true;
-
-            // 根据设置决定是否启用增强器
-            if (!isEnhancerEnabled.value) {
-                console.log('[AudioEnhancer] 根据设置保持增强器关闭状态');
-                return true;
-            }
+    // 用户激活音频上下文
+    const activateAudioContext = async () => {
+        if (!audioContext) {
+            if (!initAudioContext()) return false;
         }
 
-        if (isEnhancerEnabled.value) {
-            connectEnhancerChain();
-            applyEnhancement();
-            
-            // 延迟启动分析
-            setTimeout(() => {
-                if (isEnhancerEnabled.value) {
-                    analyzeAudioQuality();
+        if (audioContext.state === 'suspended') {
+            try {
+                await audioContext.resume();
+                requiresUserActivation.value = false;
+                console.log('[AudioEnhancer] AudioContext已被用户激活');
+
+                // 确保基础节点创建和连接
+                if (!isInitialized) {
+                    if (!createBasicNodes()) return false;
+                    isInitialized = true;
                 }
-            }, 500);
+                return true;
+            } catch (error) {
+                console.error('[AudioEnhancer] 激活AudioContext失败:', error);
+                return false;
+            }
+        }
+        return true;
+    };
+
+    // 初始化增强器
+    const initializeEnhancer = async () => {
+        console.log('[AudioEnhancer] 开始初始化增强器');
+
+        // 确保音频上下文已激活
+        if (!await activateAudioContext()) {
+            console.log('[AudioEnhancer] 等待用户激活');
+            return false;
+        }
+
+        // 如果启用了增强器，建立增强器链接
+        if (isEnhancerEnabled.value) {
+            if (connectEnhancerChain()) {
+                applyEnhancement();
+                setTimeout(() => {
+                    if (isEnhancerEnabled.value) {
+                        analyzeAudioQuality();
+                    }
+                }, 100);
+            }
         }
 
         return true;
     };
 
-    // 添加音频事件监听
-    const setupAudioListeners = () => {
-        // 监听音频源变化
-        audio.addEventListener('loadedmetadata', () => {
-            console.log('[AudioEnhancer] 检测到新的音频源');
-            if (!isInitialized) {
-                initializeEnhancer();
-            } else if (isEnhancerEnabled.value) {
-                // 重新连接增强器链
-                connectEnhancerChain();
-                applyEnhancement();
-            }
-        });
-
-        // 监听播放错误
-        audio.addEventListener('error', (e) => {
-            console.error('[AudioEnhancer] 音频播放错误:', e);
-            if (sourceNode) {
-                try {
-                    // 确保基本连接存在
-                    sourceNode.disconnect();
-                    sourceNode.connect(audioContext.destination);
-                } catch (err) {
-                    console.error('[AudioEnhancer] 恢复基本连接失败:', err);
-                }
-            }
-        });
-    };
-
-    // 修改禁用增强器函数
+    // 禁用增强器
     const disableEnhancer = () => {
-        console.log('[AudioEnhancer] 开始禁用增强器');
+        console.log('[AudioEnhancer] 禁用增强器');
         isAnalyzing.value = false;
-        
+        enhancerConnected = false;
+
         if (sourceNode) {
-            try {
-                // 断开除了destination之外的所有连接
-                const connections = sourceNode.numberOfOutputs;
-                if (connections > 1) {
-                    sourceNode.disconnect(compressorNode);
-                }
-                
-                // 断开其他节点
-                if (compressorNode) compressorNode.disconnect();
-                if (gainNode) gainNode.disconnect();
-                if (reverbNode) reverbNode.disconnect();
-                if (analyserNode) analyserNode.disconnect();
-                equalizerNodes.forEach(node => {
-                    try { node.disconnect(); } catch (e) {}
-                });
-                
-                enhancerConnected = false;
-                console.log('[AudioEnhancer] 增强器已禁用，保持基本音频输出');
-            } catch (error) {
-                console.error('[AudioEnhancer] 禁用增强器时出错:', error);
-            }
+            setupBaselineConnection();
         }
+
+        // 断开其他节点
+        if (compressorNode) compressorNode.disconnect();
+        if (gainNode) gainNode.disconnect();
+        if (reverbNode) reverbNode.disconnect();
+        if (analyserNode) analyserNode.disconnect();
+        equalizerNodes.forEach(node => node.disconnect());
     };
-    
-    // 修改 toggleEnhancer 函数
-    const toggleEnhancer = () => {
-        console.log('[AudioEnhancer] 切换增强器状态，当前状态:', isEnhancerEnabled.value);
-        
-        // 保存当前播放状态
+
+    // 切换增强器状态
+    const toggleEnhancer = async () => {
         const wasPlaying = !audio.paused;
         const currentTime = audio.currentTime;
-        
+
+        if (wasPlaying) {
+            audio.pause();
+        }
+
+        // 确保上下文已激活
+        if (!await activateAudioContext()) {
+            console.warn('[AudioEnhancer] 无法激活AudioContext，保持原状态');
+            if (wasPlaying) {
+                audio.currentTime = currentTime;
+                audio.play().catch(console.error);
+            }
+            return;
+        }
+
         isEnhancerEnabled.value = !isEnhancerEnabled.value;
 
         if (isEnhancerEnabled.value) {
-            initializeEnhancer();
+            await initializeEnhancer();
         } else {
             disableEnhancer();
         }
@@ -413,10 +427,13 @@ export default function useAudioEnhancer(audio) {
         settings.enhancementLevel = enhancementLevel.value;
         localStorage.setItem('settings', JSON.stringify(settings));
 
-        // 如果之前在播放，确保继续播放
+        // 恢复播放
         if (wasPlaying) {
             audio.currentTime = currentTime;
-            audio.play().catch(e => console.error('[AudioEnhancer] 恢复播放失败:', e));
+            // 使用较短的延迟确保节点连接完成
+            setTimeout(() => {
+                audio.play().catch(e => console.error('[AudioEnhancer] 恢复播放失败:', e));
+            }, 20);
         }
 
         console.log('[AudioEnhancer] 增强器状态已更新:', isEnhancerEnabled.value ? '启用' : '禁用');
@@ -468,9 +485,56 @@ export default function useAudioEnhancer(audio) {
         });
     }
     
+    // 设置事件监听
+    const setupAudioListeners = () => {
+        // 监听音频源变化
+        audio.addEventListener('loadedmetadata', () => {
+            console.log('[AudioEnhancer] 检测到新的音频源');
+            // 只在未初始化时尝试初始化
+            if (!isInitialized && !requiresUserActivation.value) {
+                initializeEnhancer();
+            }
+        });
+
+        // 监听播放事件
+        audio.addEventListener('play', async () => {
+            console.log('[AudioEnhancer] 播放开始');
+            // 确保音频上下文是激活的
+            if (audioContext && audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+        });
+
+        // 监听播放错误
+        audio.addEventListener('error', (e) => {
+            console.error('[AudioEnhancer] 音频播放错误:', e);
+            setupBaselineConnection();
+        });
+
+        // 监听用户交互
+        const handleUserInteraction = async () => {
+            if (requiresUserActivation.value) {
+                console.log('[AudioEnhancer] 检测到用户交互');
+                if (await activateAudioContext()) {
+                    // 如果增强器已启用，初始化它
+                    if (isEnhancerEnabled.value) {
+                        await initializeEnhancer();
+                    }
+                }
+            }
+        };
+
+        // 添加用户交互监听
+        document.addEventListener('click', handleUserInteraction, { once: true });
+        document.addEventListener('touchstart', handleUserInteraction, { once: true });
+        document.addEventListener('keydown', handleUserInteraction, { once: true });
+    };
+    
     // 初始化
     loadSettings();
     setupAudioListeners();
+    // 尝试初始化音频上下文，但不强制激活
+    initAudioContext();
     
     return {
         // 状态
