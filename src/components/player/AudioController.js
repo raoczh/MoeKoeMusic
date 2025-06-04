@@ -44,15 +44,15 @@ export default function useAudioController({ onSongEnd, updateCurrentTime }) {
         audio.addEventListener('play', () => {
             if (isEnhancerEnabled.value) {
                 try {
-                    // 确保在播放开始时重新初始化增强器
+                    // 确保在播放开始时重新初始化增强器，但不切换状态
                     if (!audioEnhancer.enhancerConnected) {
                         console.log('[AudioController] 播放开始，初始化AI音质增强器');
-                        audioEnhancer.initializeEnhancer();
+                        audioEnhancer.initializeEnhancer().catch(error => {
+                            console.error('[AudioController] 增强器初始化失败:', error);
+                        });
                     }
                 } catch (error) {
                     console.error('[AudioController] 增强器初始化失败:', error);
-                    // 如果初始化失败，禁用增强器
-                    isEnhancerEnabled.value = false;
                 }
             }
         });
@@ -63,12 +63,14 @@ export default function useAudioController({ onSongEnd, updateCurrentTime }) {
             if (audio.src !== lastSrc) {
                 console.log('[AudioController] 检测到音频源变化:', audio.src);
                 lastSrc = audio.src;
-                if (audio.src && isEnhancerEnabled.value) {
-                    // 新音频源，需要重新初始化增强器
-                    console.log('[AudioController] 音频源变化，重新初始化增强器');
+                if (audio.src && isEnhancerEnabled.value && !audioEnhancer.enhancerConnected) {
+                    // 只在增强器未连接时重新初始化
+                    console.log('[AudioController] 音频源变化，需要重新初始化增强器');
                     setTimeout(() => {
                         if (audio.readyState >= 1) { // HAVE_METADATA
-                            audioEnhancer.initializeEnhancer();
+                            audioEnhancer.initializeEnhancer().catch(error => {
+                                console.error('[AudioController] 音频源变化时增强器初始化失败:', error);
+                            });
                         }
                     }, 100); // 给予一些时间让音频元数据加载
                 }
