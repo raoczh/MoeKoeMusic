@@ -862,8 +862,7 @@ onMounted(() => {
     }
 
     // 初始化播放模式
-    currentPlaybackModeIndex.value = localStorage.getItem('player_playback_mode') || 1;
-    audio.loop = currentPlaybackModeIndex.value == 2;
+    playbackMode.initPlaybackMode();
 
     // 初始化设置
     const settings = JSON.parse(localStorage.getItem('settings') || '{}');

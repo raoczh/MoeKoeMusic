@@ -78,6 +78,13 @@ if(settings?.gpuAcceleration === 'on'){
     app.commandLine.appendSwitch('disable-gpu-compositing');
 }
 
+if(settings?.autoStart === 'on'){
+    app.setLoginItemSettings({
+        openAtLogin: true,
+        path: app.getPath('exe'),
+    });
+}
+
 if(settings?.highDpi === 'on'){
     app.commandLine.appendSwitch('high-dpi-support', '1');
     app.commandLine.appendSwitch('force-device-scale-factor', settings?.dpiScale || '1');

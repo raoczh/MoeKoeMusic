@@ -32,6 +32,7 @@ export function createWindow() {
         y: lastWindowState.y || Math.floor((screenHeight - windowHeight) / 2),
         minWidth: 890,
         minHeight: 750,
+        show: savedConfig?.startMinimized === 'on' ? false : true,
         frame: useNativeTitleBar,
         titleBarStyle: useNativeTitleBar ? 'default' : 'hiddenInset',
         autoHideMenuBar: true,
@@ -65,6 +66,12 @@ export function createWindow() {
 
     mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
         console.error('Failed to load:', errorCode, errorDescription);
+    });
+    
+    mainWindow.once('ready-to-show', () => {
+        if(savedConfig?.startMinimized === 'on'){
+            mainWindow.hide();
+        }
     });
 
     mainWindow.webContents.on('did-finish-load', () => {
@@ -166,8 +173,8 @@ export function createLyricsWindow() {
 }
 
 // 创建托盘图标及菜单
-export function createTray(mainWindow, title='') {
-    if(tray && title) {
+export function createTray(mainWindow, title = '') {
+    if (tray && title) {
         tray.setToolTip(title);
         return tray;
     }
@@ -521,7 +528,7 @@ export function registerShortcut() {
         } else if (!settings?.shortcuts) {
             globalShortcut.register('Alt+Ctrl+D', clickFunc);
         }
-    } catch{
+    } catch {
         dialog.showMessageBox({
             type: 'error',
             title: '提示',
