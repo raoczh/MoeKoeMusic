@@ -63,6 +63,14 @@
       "package.json"
     ],
     "icon": "build/icons/icon",
+    "protocols": [
+      {
+        "name": "MoeKoe Music Protocol",
+        "schemes": [
+          "moekoe"
+        ]
+      }
+    ],
     "win": {
       "icon": "build/icons/icon.ico",
       "target": [
@@ -99,7 +107,15 @@
         "zip"
       ],
       "identity": null,
-      "artifactName": "${productName}.${ext}"
+      "artifactName": "${productName}.${ext}",
+      "protocols": [
+        {
+          "name": "MoeKoe Music Protocol",
+          "schemes": [
+            "moekoe"
+          ]
+        }
+      ]
     },
     "dmg": {
       "sign": false

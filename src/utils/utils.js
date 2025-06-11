@@ -1,3 +1,6 @@
+import { ElMessage } from 'element-plus';
+import i18n from '@/utils/i18n';
+
 export const applyColorTheme = (theme) => {
     let colors;
     if (theme === 'blue') {
@@ -117,3 +120,10 @@ export const openRegisterUrl = (registerUrl) => {
         window.open(registerUrl, '_blank');
     }
 };
+
+// 分享
+export const share = (linkUrl) => {
+    let encodeString = (window.electron?'moekoe://':window.location.host+'/#/')+linkUrl;
+    navigator.clipboard.writeText(encodeString);
+    ElMessage.success(i18n.global.t('kou-ling-yi-fu-zhi,kuai-ba-ge-qu-fen-xiang-gei-peng-you-ba'));
+}

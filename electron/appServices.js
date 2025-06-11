@@ -625,3 +625,93 @@ export function setThumbarButtons(mainWindow, isPlaying = false) {
 
     mainWindow.setThumbarButtons(buttons);
 }
+
+// 处理自定义协议相关
+let hash = "";
+let listid = "";
+let protocolMainWindow = null;
+
+// 注册自定义协议
+export function registerProtocolHandler(mainWindow) {
+    const PROTOCOL = "moekoe";
+    
+    // 保存mainWindow引用
+    if (mainWindow) {
+        protocolMainWindow = mainWindow;
+    }
+    
+    // 注册协议
+    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath);
+    
+    // 处理启动参数
+    handleArgv(process.argv);
+    
+    // 处理第二个实例的启动参数
+    app.on('second-instance', (event, commandLine) => {
+        if (protocolMainWindow) {
+            if (protocolMainWindow.isMinimized()) protocolMainWindow.restore();
+            protocolMainWindow.show();
+            protocolMainWindow.focus();
+            handleArgv(commandLine);
+        }
+    });
+    
+    // 在macOS平台特别处理open-url事件
+    if (process.platform === 'darwin') {
+        app.on('open-url', (event, urlStr) => {
+            event.preventDefault();
+            handleUrl(urlStr);
+        });
+    }
+    
+    return { 
+        getHash: () => hash,
+        handleProtocolArgv: handleArgv 
+    };
+}
+
+// 处理命令行参数
+function handleArgv(argv) {
+    const PROTOCOL = "moekoe";
+    const prefix = `${PROTOCOL}:`;
+    const url = argv.find(arg => arg.startsWith(prefix));
+    if (url) handleUrl(url);
+}
+
+// 处理URL
+function handleUrl(url) {
+    const urlObj = new URL(url);
+    
+    // 提取所有参数并更新全局变量
+    hash = urlObj.searchParams.get("hash") || "";
+    listid = urlObj.searchParams.get("listid") || "";
+    
+    // 根据路径和参数决定发送什么数据到渲染进程
+    if (protocolMainWindow && protocolMainWindow.webContents) {
+        // 将所有参数打包发送
+        protocolMainWindow.webContents.send('url-params', { 
+            hash,
+            listid,
+            urlPath: urlObj.pathname.substring(1) // 去掉前导斜杠
+        });
+    }
+}
+
+// 如果有从URL启动的hash参数，在页面加载完成后发送
+export function sendHashAfterLoad(mainWindow) {
+    if (mainWindow) {
+        protocolMainWindow = mainWindow;
+    }
+    
+    if ((hash || listid) && protocolMainWindow) {
+        protocolMainWindow.webContents.on('did-finish-load', () => {
+            setTimeout(() => {
+                protocolMainWindow.webContents.send('url-params', { 
+                    hash,
+                    listid,
+                    urlPath: 'share'
+                });
+            }, 1000);
+        });
+    }
+}

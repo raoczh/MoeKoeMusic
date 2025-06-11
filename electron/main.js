@@ -1,8 +1,9 @@
 import { app, ipcMain, globalShortcut, dialog, Notification, shell, session } from 'electron';
-import { 
-    createWindow, createTray, createTouchBar, startApiServer, 
-    stopApiServer, registerShortcut, 
-    playStartupSound, createLyricsWindow, setThumbarButtons 
+import {
+    createWindow, createTray, createTouchBar, startApiServer,
+    stopApiServer, registerShortcut,
+    playStartupSound, createLyricsWindow, setThumbarButtons,
+    registerProtocolHandler, sendHashAfterLoad
 } from './appServices.js';
 import { setupAutoUpdater } from './updater.js';
 import apiService from './apiService.js';
@@ -16,16 +17,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
-  app.quit(); 
-  process.exit(0);
+    app.quit();
+    process.exit(0);
 } else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show(); 
-      mainWindow.focus(); 
-    }
-  });
+    let protocolHandler;
+    app.on('second-instance', (event, commandLine) => {
+        if (!protocolHandler) {
+            protocolHandler = registerProtocolHandler(null);
+        }
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show(); 
+            mainWindow.focus(); 
+        }
+        protocolHandler.handleProtocolArgv(commandLine);
+    });
 }
 
 app.on('ready', () => {
@@ -38,6 +44,8 @@ app.on('ready', () => {
             registerShortcut();
             setupAutoUpdater(mainWindow);
             apiService.init(mainWindow);
+            registerProtocolHandler(mainWindow);
+            sendHashAfterLoad(mainWindow);
         } catch (error) {
             console.log('初始化应用时发生错误:', error);
             createTray(null);
@@ -72,20 +80,20 @@ app.on('ready', () => {
 });
 
 const settings = store.get('settings');
-if(settings?.gpuAcceleration === 'on'){
+if (settings?.gpuAcceleration === 'on') {
     app.disableHardwareAcceleration();
     app.commandLine.appendSwitch('enable-transparent-visuals');
     app.commandLine.appendSwitch('disable-gpu-compositing');
 }
 
-if(settings?.autoStart === 'on'){
+if (settings?.autoStart === 'on') {
     app.setLoginItemSettings({
         openAtLogin: true,
         path: app.getPath('exe'),
     });
 }
 
-if(settings?.highDpi === 'on'){
+if (settings?.highDpi === 'on') {
     app.commandLine.appendSwitch('high-dpi-support', '1');
     app.commandLine.appendSwitch('force-device-scale-factor', settings?.dpiScale || '1');
 }
@@ -136,10 +144,10 @@ ipcMain.on('disclaimer-response', (event, accepted) => {
 ipcMain.on('window-control', (event, action) => {
     switch (action) {
         case 'close':
-            if(store.get('settings')?.minimizeToTray === 'off'){
+            if (store.get('settings')?.minimizeToTray === 'off') {
                 app.isQuitting = true;
                 app.quit();
-            }else{
+            } else {
                 mainWindow.close();
             }
             break;
@@ -210,7 +218,7 @@ ipcMain.on('desktop-lyrics-action', (event, action) => {
             }
             break;
         case 'display-lyrics':
-            if(!mainWindow.lyricsWindow){
+            if (!mainWindow.lyricsWindow) {
                 createLyricsWindow();
             }
             break;
@@ -231,7 +239,7 @@ ipcMain.on('window-drag', (event, { mouseX, mouseY }) => {
     store.set('lyricsWindowPosition', { x: mouseX, y: mouseY });
 })
 
-ipcMain.on('play-pause-action',(event, playing, currentTime) =>{
+ipcMain.on('play-pause-action', (event, playing, currentTime) => {
     const lyricsWindow = mainWindow.lyricsWindow;
     if (lyricsWindow) {
         lyricsWindow.webContents.send('playing-status', playing);

@@ -71,6 +71,9 @@
                             </ul>
                         </div>
                     </div>
+                    <button class="view-mode-btn" @click="toggleViewMode" :title="viewMode === 'list' ? '切换到网格视图' : '切换到列表视图'">
+                        <i class="fas" :class="viewMode === 'list' ? 'fa-th' : 'fa-list'"></i>
+                    </button>
                     <input type="text" v-model="searchQuery" @keyup.enter="searchTracks" :placeholder="t('sou-suo-ge-qu')" class="search-input" />
                 </div>
             </div>
@@ -95,16 +98,28 @@
                 </div>
             </div>
 
-            <RecycleScroller ref="recycleScrollerRef" :items="filteredTracks" :item-size="50" class="track-list" key-field="hash">
+            <RecycleScroller ref="recycleScrollerRef" :items="filteredTracks" :item-size="viewMode === 'list' ? 50 : 70" class="track-list" key-field="hash">
                 <template #default="{ item, index }">
-                    <div class="li" :key="item.hash"
+                    <div class="li" :key="item.hash" 
+                        :class="{ 'cover-view': viewMode === 'grid', 'selected': selectedTracks.includes(index) }"
                         @click="batchSelectionMode ? selectTrack(index, $event) : playSong(item.hash, item.name, item.cover, item.author)"
-                        @contextmenu.prevent="showContextMenu($event, item)"
-                        :class="{ 'selected': selectedTracks.includes(index) }">
+                        @contextmenu.prevent="showContextMenu($event, item)">
+                        
+                        <!-- 复选框或序号 -->
                         <div class="track-checkbox" v-if="batchSelectionMode">
                             <input type="checkbox" :checked="selectedTracks.includes(index)" @click.stop="selectTrack(index, $event)">
                         </div>
                         <div class="track-number" v-else>{{ index + 1 }}</div>
+
+                        <!-- 网格模式封面 -->
+                        <div class="track-cover" v-if="viewMode === 'grid'">
+                            <img :src="item.cover || './assets/images/ico.png'" alt="Cover">
+                            <div class="track-cover-overlay">
+                                <i :class="props.playerControl?.currentSong.hash == item.hash ? 'fas fa-music' : 'fas fa-play'"></i>
+                            </div>
+                        </div>
+
+                        <!-- 歌曲信息 -->
                         <div class="track-title" :title="item.name">{{ item.name }}
                             <span v-if="item.privilege == 10" class="icon vip-icon">VIP</span>
                             <span v-if="item.isHQ" class="icon sq-icon">HQ</span>
@@ -113,7 +128,8 @@
                         <div class="track-artist" :title="item.author">{{ item.author }}</div>
                         <div class="track-album" :title="item.album">{{ item.album }}</div>
                         <div class="track-timelen">
-                            <button v-if="props.playerControl?.currentSong.hash == item.hash" class="queue-play-btn fas fa-music"></button>
+                            <button v-if="props.playerControl?.currentSong.hash == item.hash && viewMode === 'list'" 
+                                class="queue-play-btn fas fa-music"></button>
                             {{ $formatMilliseconds(item.timelen) }}
                         </div>
                     </div>
@@ -149,6 +165,7 @@ import { get } from '../utils/request';
 import { useRoute, useRouter } from 'vue-router';
 import { MoeAuthStore } from '../stores/store';
 import { useI18n } from 'vue-i18n';
+import { share } from '@/utils/utils';
 
 const playlistSelect = ref(null);
 const { t } = useI18n();
@@ -205,12 +222,19 @@ const isAllSelected = computed(() => {
     return selectedTracks.value.length === filteredTracks.value.length && filteredTracks.value.length > 0;
 });
 
+// 视图模式相关状态
+const viewMode = ref('list'); // 'list' or 'grid'
+
 const props = defineProps({
     playerControl: Object
 });
 
 onMounted(() => {
     isFollowed.value = !!route.query.unfollow;
+    const savedViewMode = localStorage.getItem('trackViewMode');
+    if (savedViewMode) {
+        viewMode.value = savedViewMode;
+    }
     loadData();
     document.addEventListener('click', handleClickOutside);
 });
@@ -550,8 +574,7 @@ const deletePlaylist = async () => {
 // 分享歌单
 const sharePlaylist = () => {
     isDropdownVisible.value = false;
-    navigator.clipboard.writeText(route.query.global_collection_id);
-    window.$modal.alert(t('yi-fu-zhi-fen-xiang-ma-qing-zai-moekoe-ke-hu-duan-zhong-fang-wen'));
+    share('share?listid='+route.query.global_collection_id);
 };
 
 // 右键菜单
@@ -752,6 +775,12 @@ const handleSongRemoved = (fileid) => {
     tracks.value = tracks.value.filter(track => track.originalData?.fileid !== fileid);
     filteredTracks.value = filteredTracks.value.filter(track => track.originalData?.fileid !== fileid);
 };
+
+// 切换视图模式
+const toggleViewMode = () => {
+    viewMode.value = viewMode.value === 'list' ? 'grid' : 'list';
+    localStorage.setItem('trackViewMode', viewMode.value);
+};
 </script>
 
 <style scoped>
@@ -914,6 +943,30 @@ const handleSongRemoved = (fileid) => {
 .batch-action-btn.active {
     background-color: var(--primary-color);
     color: white;
+}
+
+/* 视图模式切换按钮 */
+.view-mode-btn {
+    background-color: transparent;
+    border: 1px solid var(--secondary-color);
+    padding: 5px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-color);
+    width: 36px;
+    height: 31px;
+    transition: all 0.3s ease;
+}
+
+.view-mode-btn:hover {
+    background-color: rgba(var(--primary-color-rgb), 0.1);
+}
+
+.view-mode-btn i {
+    font-size: 16px;
 }
 
 .selected-count {
@@ -1247,5 +1300,105 @@ const handleSongRemoved = (fileid) => {
 
 .track-list-header-row:hover {
     background-color: rgba(var(--primary-color-rgb), 0.15);
+}
+
+/* 网格视图样式 */
+.li.cover-view {
+    height: 60px;
+    padding: 5px 10px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #eee;
+    border-radius: 5px;
+}
+
+.li.cover-view:hover {
+    background-color: var(--background-color);
+}
+
+.track-cover {
+    position: relative;
+    width: 50px;
+    height: 50px;
+    margin-right: 15px;
+    overflow: hidden;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.track-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+}
+
+.li.cover-view:hover .track-cover img {
+    transform: scale(1.05);
+}
+
+.track-cover-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 20px;
+}
+
+.li.cover-view:hover .track-cover-overlay {
+    opacity: 1;
+}
+
+.track-list {
+    height: 800px;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent; 
+    overflow: auto;
+}
+
+/* 调整封面视图下的其他元素样式 */
+.li.cover-view .track-title {
+    flex: 2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.li.cover-view .track-artist {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 10px;
+}
+
+.li.cover-view .track-album {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 10px;
+}
+
+.li.cover-view .track-timelen {
+    width: 95px;
+    text-align: right;
+}
+
+.li.cover-view .track-checkbox,
+.li.cover-view .track-number {
+    margin-right: 10px;
+    width: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 </style>

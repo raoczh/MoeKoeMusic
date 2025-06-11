@@ -12,6 +12,7 @@
                     </li>
                 </ul>
             </li>
+            <li @click="shareSong(contextSong)"><i class="fa-solid fa-share-nodes"></i> 分享</li>
             <li v-if="MoeAuth.isAuthenticated && listId && contextSong.userid === MoeAuth.UserInfo.userid" @click="cancel()">取消收藏</li>
             <li v-if="MoeAuth.isAuthenticated" @click="addToNext(contextSong)">添加到下一首</li>
         </ul>
@@ -24,6 +25,7 @@ import { get } from '../utils/request';
 import { ElMessage } from 'element-plus';
 import { MoeAuthStore } from '../stores/store';
 import i18n from '@/utils/i18n';
+import { share } from '@/utils/utils';
 const MoeAuth = MoeAuthStore();
 const showContextMenu = ref(false);
 const showSubMenu = ref(false);
@@ -59,6 +61,13 @@ const fetchPlaylists = async () => {
     } catch (error) {
         ElMessage.error(i18n.global.t('huo-qu-ge-dan-shi-bai'));
     }
+};
+
+// 分享歌曲功能
+const shareSong = (song) => {
+    if (!song) return;
+    share('share?hash='+song.FileHash);
+    hideContextMenu();
 };
 
 // 添加到歌单功能

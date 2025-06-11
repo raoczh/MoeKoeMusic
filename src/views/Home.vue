@@ -107,10 +107,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, onUpdated } from "vue";
 import { get } from '../utils/request';
 import ContextMenu from '../components/ContextMenu.vue';
+import { useRoute,useRouter } from 'vue-router';
+import { getCover } from '../utils/utils';
 
+const router = useRouter();
+const route = useRoute();
 const songs = ref([]);
 const special_list = ref([]);
 const isLoading = ref(true);
@@ -212,6 +216,25 @@ onMounted(() => {
     playlist();
 });
 
+onUpdated(() => {
+    if(!window.electron){
+        if(route.query.hash){
+            privilegeSong(route.query.hash).then(res=>{
+                if(res.status==1){
+                    const songInfo = res.data[0];
+                    playSong(songInfo.hash,songInfo.albumname,getCover(songInfo.info.image, 480),songInfo.singername)
+                    router.push('/');
+                }
+            })
+        }else if(route.query.listid){
+            router.push({
+                path: '/PlaylistDetail',
+                query: { global_collection_id: route.query.listid }
+            });
+        }
+    }
+})
+
 const recommend = async () => {
     const response = await get('/everyday/recommend');
     if (response.status == 1) {
@@ -227,6 +250,10 @@ const playlist = async () => {
     }
 }
 
+const privilegeSong = async (hash) => {
+    const response = await get(`/privilege/lite`,{hash:hash});
+    return response;
+}
 const addAllSongsToQueue = () => {
     props.playerControl.addPlaylistToQueue(songs.value.map(song => ({
         hash: song.hash,

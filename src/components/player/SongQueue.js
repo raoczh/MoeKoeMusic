@@ -296,6 +296,12 @@ export default function useSongQueue(t, musicQueueStore) {
         return queueSongs;
     };
 
+    // 获取歌曲详情
+    const privilegeSong = async (hash) => {
+        const response = await get(`/privilege/lite`,{hash:hash});
+        return response;
+    }
+
     return {
         currentSong,
         NextSong,
@@ -304,6 +310,7 @@ export default function useSongQueue(t, musicQueueStore) {
         addToNext,
         getPlaylistAllSongs,
         addPlaylistToQueue,
-        addCloudPlaylistToQueue
+        addCloudPlaylistToQueue,
+        privilegeSong
     };
 } 

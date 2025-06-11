@@ -19,6 +19,7 @@ const routes = [
         component: HomeLayout,
         children: [
             { path: '', name: 'Index', component: Home },
+            { path: '/share', name: 'Share', component: Home },
             { path: '/discover', name: 'Discover', component: Discover },
             { path: '/library', name: 'Library', component: Library, meta: { requiresAuth: true } },
             { path: '/login', name: 'Login', component: Login },
